@@ -3,9 +3,9 @@
 // --- 1. IMPORTS ---
 // We're using Express to create our server, Mongoose to connect to our MongoDB database,
 // and CORS to allow our frontend (which will be on a different URL) to talk to this backend.
-const express = 'express';
-const mongoose = 'mongoose';
-const cors = 'cors';
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
 
 // --- 2. INITIAL SETUP ---
 // Create an instance of our express application.
@@ -21,11 +21,12 @@ app.use(express.json()); // Allows our server to understand JSON data sent in re
 // --- 4. DATABASE CONNECTION ---
 // IMPORTANT: Replace this with your own MongoDB connection string.
 // You can get a free one from MongoDB Atlas (cloud.mongodb.com)
-const MONGO_URI = "mongodb+srv://viistackcode:<db_password>@cluster.x3dzeus.mongodb.net/?retryWrites=true&w=majority&appName=cluster";
+const MONGO_URI = "YOUR_MONGODB_CONNECTION_STRING_HERE";
 
 mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+    // These options are no longer needed in recent versions of Mongoose but don't hurt to have
+    // useNewUrlParser: true,
+    // useUnifiedTopology: true,
 })
 .then(() => console.log("Successfully connected to MongoDB!"))
 .catch(err => console.error("Error connecting to MongoDB:", err));
@@ -154,7 +155,7 @@ app.delete('/api/medicines/:id', async (req, res) => {
             return res.status(404).json({ message: 'Medicine not found' });
         }
 
-        await medicine.remove();
+        await medicine.deleteOne(); // Use deleteOne() instead of remove() which is deprecated
         res.json({ message: 'Medicine removed successfully' });
 
     } catch (error) {
