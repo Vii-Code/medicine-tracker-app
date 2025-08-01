@@ -21,7 +21,7 @@ app.use(express.json()); // Allows our server to understand JSON data sent in re
 // --- 4. DATABASE CONNECTION ---
 // IMPORTANT: Replace this with your own MongoDB connection string.
 // You can get a free one from MongoDB Atlas (cloud.mongodb.com)
-const MONGO_URI = "mongodb+srv://viistackcode:<viistackcode>@cluster.x3dzeus.mongodb.net/?retryWrites=true&w=majority&appName=cluster";
+const MONGO_URI = "mongodb+srv://viistackcode:viistackcode@cluster.x3dzeus.mongodb.net/?retryWrites=true&w=majority&appName=cluster";
 
 mongoose.connect(MONGO_URI, {
     // These options are no longer needed in recent versions of Mongoose but don't hurt to have
