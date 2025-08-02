@@ -64,7 +64,7 @@ const checkStockAndSendAlerts = async () => {
             // NEW LOGIC: Check if stock is low AND if it is not currently snoozed.
             const isSnoozed = med.snoozedUntil && med.snoozedUntil > today;
 
-            if (daysLeft <= 5 && !isSnoozed) {
+            if (daysLeft <= 3 && !isSnoozed) {
                 console.log(`Stock for ${med.name} is low (${daysLeft} days left). Sending reminder...`);
                 
                 // This is the unique "magic link" for snoozing
