@@ -99,7 +99,7 @@ const checkStockAndSendAlerts = async () => {
 };
 
 // --- 8. SCHEDULED TASK (CRON JOB) ---
-cron.schedule('* * * * *', checkStockAndSendAlerts, {
+cron.schedule('0 8 * * *', checkStockAndSendAlerts, {
     scheduled: true,
     timezone: "Asia/Kolkata"
 });
