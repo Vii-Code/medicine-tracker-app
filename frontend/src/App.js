@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 
 // This is the base URL of our backend API.
-const API_URL = 'medicine-tracker-app.railway.internal/api/medicines';
+const API_URL = 'medicine-tracker-app-production.up.railway.app/api/medicines';
 
 function App() {
   // --- STATE MANAGEMENT ---
