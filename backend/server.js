@@ -8,7 +8,6 @@ const cron = require('node-cron');
 const dotenv = require('dotenv');
 const nodemailer = require('nodemailer');
 
-// Load environment variables from .env file
 dotenv.config();
 
 // --- 2. INITIAL SETUP ---
@@ -22,27 +21,23 @@ app.use(express.json());
 // --- 4. DATABASE CONNECTION ---
 const MONGO_URI = `mongodb+srv://viistackcode:${process.env.MONGO_PASS}@cluster.x3dzeus.mongodb.net/?retryWrites=true&w=majority&appName=cluster`;
 
-// IMPORTANT: Let's also move your Mongo password to the .env file for better security.
-// Add a line to your .env file: MONGO_PASS=your_mongodb_password
-// Then replace the MONGO_URI string above with the one provided.
-
 mongoose.connect(MONGO_URI)
 .then(() => console.log("Successfully connected to MongoDB!"))
 .catch(err => console.error("Error connecting to MongoDB:", err));
 
-// --- 5. DATABASE SCHEMA (No changes here) ---
+// --- 5. DATABASE SCHEMA (UPDATED) ---
 const medicineSchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true },
     totalQuantity: { type: Number, required: true, min: 0 },
     dosagePerDay: { type: Number, required: true, min: 1 },
     startDate: { type: Date, default: Date.now },
     lastRestockedAt: { type: Date, default: Date.now },
-    notificationSent: { type: Boolean, default: false } // New field to track notifications
+    // NEW: This field will store the date until which notifications are paused.
+    snoozedUntil: { type: Date, default: null } 
 });
 const Medicine = mongoose.model('Medicine', medicineSchema);
 
 // --- 6. EMAIL TRANSPORTER SETUP ---
-// This uses the credentials from your .env file to prepare for sending emails.
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -51,7 +46,7 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// --- 7. NOTIFICATION LOGIC ---
+// --- 7. NOTIFICATION LOGIC (UPDATED) ---
 const checkStockAndSendAlerts = async () => {
     console.log('Running daily stock check...');
     try {
@@ -66,32 +61,39 @@ const checkStockAndSendAlerts = async () => {
             const currentStock = med.totalQuantity - consumedQuantity;
             const daysLeft = currentStock > 0 ? Math.floor(currentStock / med.dosagePerDay) : 0;
 
-            // Check if stock is low (5 days or less) AND a notification hasn't been sent yet
-            if (daysLeft <= 5 && !med.notificationSent) {
-                console.log(`Stock for ${med.name} is low (${daysLeft} days left). Sending email...`);
+            // NEW LOGIC: Check if stock is low AND if it is not currently snoozed.
+            const isSnoozed = med.snoozedUntil && med.snoozedUntil > today;
+
+            if (daysLeft <= 5 && !isSnoozed) {
+                console.log(`Stock for ${med.name} is low (${daysLeft} days left). Sending reminder...`);
                 
+                // This is the unique "magic link" for snoozing
+                const snoozeLink = `http://localhost:5000/api/medicines/snooze/${med._id}`;
+
                 const mailOptions = {
-                    from: process.env.EMAIL_USER,
-                    to: process.env.EMAIL_USER, // Sending email to yourself
-                    subject: `Low Stock Alert: ${med.name}`,
+                    from: `"Medicine Tracker" <${process.env.EMAIL_USER}>`,
+                    to: process.env.EMAIL_USER,
+                    subject: `Reminder: Your ${med.name} stock is low!`,
                     html: `
-                        <h1>Medicine Stock Alert</h1>
+                        <h1>Medicine Reminder</h1>
                         <p>Hi there,</p>
-                        <p>This is an automated message from your Medicine Tracker app.</p>
-                        <p>Your supply of <strong>${med.name}</strong> is running low.</p>
+                        <p>This is your daily reminder that your supply of <strong>${med.name}</strong> is running low.</p>
                         <ul>
                             <li>Current Stock: <strong>${currentStock} pills</strong></li>
                             <li>Days Left: <strong>Approximately ${daysLeft} days</strong></li>
                         </ul>
                         <p>Please remember to restock soon!</p>
+                        <hr>
+                        <p>Once you've seen this, you can stop these reminders for one week by clicking the link below:</p>
+                        <a href="${snoozeLink}" style="background-color: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                            Snooze Alerts for 7 Days
+                        </a>
+                        <p style="font-size: 12px; color: #777;">(You'll get reminders again in a week if you haven't restocked.)</p>
                     `
                 };
 
                 await transporter.sendMail(mailOptions);
-                console.log(`Email sent for ${med.name}.`);
-
-                // Mark that a notification has been sent to avoid spamming
-                await Medicine.findByIdAndUpdate(med._id, { notificationSent: true });
+                console.log(`Reminder sent for ${med.name}.`);
             }
         }
     } catch (error) {
@@ -100,19 +102,36 @@ const checkStockAndSendAlerts = async () => {
 };
 
 // --- 8. SCHEDULED TASK (CRON JOB) ---
-// This will run the 'checkStockAndSendAlerts' function every day at 8:00 AM.
-// The format is: 'minute hour * * *'
 cron.schedule('* * * * *', checkStockAndSendAlerts, {
     scheduled: true,
     timezone: "Asia/Kolkata"
 });
-
 console.log("Cron job scheduled: Daily stock check will run at 8:00 AM IST.");
 
 
-// --- 9. API ROUTES (with one small change) ---
+// --- 9. API ROUTES (UPDATED) ---
 
-// Add a new route to handle restocking, which resets the notification flag
+// NEW SNOOZE ROUTE: This is where the magic link in the email leads.
+app.get('/api/medicines/snooze/:id', async (req, res) => {
+    try {
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+        await Medicine.findByIdAndUpdate(req.params.id, { snoozedUntil: sevenDaysFromNow });
+
+        res.send(`
+            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: #28a745;">Success!</h1>
+                <p>Reminders for this medicine have been snoozed for 7 days.</p>
+                <p>You can now close this window.</p>
+            </div>
+        `);
+    } catch (error) {
+        res.status(500).send('An error occurred. Please try again.');
+    }
+});
+
+// UPDATED RESTOCK ROUTE: Now it also resets the snooze date.
 app.post('/api/medicines/:id/restock', async (req, res) => {
     try {
         const { newQuantity } = req.body;
@@ -124,10 +143,10 @@ app.post('/api/medicines/:id/restock', async (req, res) => {
             req.params.id,
             {
                 totalQuantity: newQuantity,
-                lastRestockedAt: new Date(), // Update restock date
-                notificationSent: false, // Reset notification flag
+                lastRestockedAt: new Date(),
+                snoozedUntil: null, // Reset the snooze date so alerts can be sent again
             },
-            { new: true } // Return the updated document
+            { new: true }
         );
 
         if (!updatedMedicine) {
@@ -140,18 +159,8 @@ app.post('/api/medicines/:id/restock', async (req, res) => {
     }
 });
 
-
-// GET, POST, DELETE routes remain the same as before...
-// A simple test route to make sure our server is running
-app.get('/', (req, res) => {
-    res.send('Hello from the Medicine Tracker API!');
-});
-
-/**
- * @route   POST /api/medicines
- * @desc    Add a new medicine to the tracker
- * @access  Public (for now)
- */
+// --- Other routes (GET, POST, DELETE) remain the same ---
+app.get('/', (req, res) => { res.send('Hello from the Medicine Tracker API!'); });
 app.post('/api/medicines', async (req, res) => {
     try {
         const newMedicine = new Medicine({
@@ -161,17 +170,8 @@ app.post('/api/medicines', async (req, res) => {
         });
         const savedMedicine = await newMedicine.save();
         res.status(201).json(savedMedicine);
-    } catch (error) {
-        console.error("Error adding medicine:", error);
-        res.status(500).json({ message: "Server error while adding medicine." });
-    }
+    } catch (error) { res.status(500).json({ message: "Server error while adding medicine." }); }
 });
-
-/**
- * @route   GET /api/medicines
- * @desc    Get all medicines and their current stock
- * @access  Public (for now)
- */
 app.get('/api/medicines', async (req, res) => {
     try {
         const medicines = await Medicine.find();
@@ -189,31 +189,16 @@ app.get('/api/medicines', async (req, res) => {
             };
         });
         res.json(medicinesWithStock);
-    } catch (error) {
-        console.error("Error fetching medicines:", error);
-        res.status(500).json({ message: "Server error while fetching medicines." });
-    }
+    } catch (error) { res.status(500).json({ message: "Server error while fetching medicines." }); }
 });
-
-/**
- * @route   DELETE /api/medicines/:id
- * @desc    Delete a medicine
- * @access  Public (for now)
- */
 app.delete('/api/medicines/:id', async (req, res) => {
     try {
         const medicine = await Medicine.findById(req.params.id);
-        if (!medicine) {
-            return res.status(404).json({ message: 'Medicine not found' });
-        }
+        if (!medicine) { return res.status(404).json({ message: 'Medicine not found' }); }
         await medicine.deleteOne();
         res.json({ message: 'Medicine removed successfully' });
-    } catch (error) {
-        console.error("Error deleting medicine:", error);
-        res.status(500).json({ message: "Server error while deleting medicine." });
-    }
+    } catch (error) { res.status(500).json({ message: "Server error while deleting medicine." }); }
 });
-
 
 // --- 10. START THE SERVER ---
 app.listen(PORT, () => {
