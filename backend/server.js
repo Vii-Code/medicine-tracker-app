@@ -12,6 +12,7 @@ dotenv.config();
 
 // --- 2. INITIAL SETUP ---
 const app = express();
+// Railway provides the port to listen on via the PORT environment variable.
 const PORT = process.env.PORT || 5000;
 
 // --- 3. MIDDLEWARE ---
@@ -25,7 +26,7 @@ mongoose.connect(MONGO_URI)
 .then(() => console.log("Successfully connected to MongoDB!"))
 .catch(err => console.error("Error connecting to MongoDB:", err));
 
-// --- 5. DATABASE SCHEMA (UPDATED) ---
+// --- 5. DATABASE SCHEMA ---
 const medicineSchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true },
     totalQuantity: { type: Number, required: true, min: 0 },
@@ -45,7 +46,7 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// --- 7. NOTIFICATION LOGIC (UPDATED) ---
+// --- 7. NOTIFICATION LOGIC ---
 const checkStockAndSendAlerts = async () => {
     console.log('Running daily stock check...');
     try {
@@ -65,9 +66,9 @@ const checkStockAndSendAlerts = async () => {
             if (daysLeft <= 5 && !isSnoozed) {
                 console.log(`Stock for ${med.name} is low (${daysLeft} days left). Sending reminder...`);
                 
-                const snoozeLink = `http://localhost:5000/api/medicines/snooze/${med._id}`;
+                const snoozeLink = `medicine-tracker-app.railway.internal${med._id}`; // NOTE: You should replace this with your actual Railway URL
 
-                const mailOptions = {
+                const mailOptions = { 
                     from: `"Medicine Tracker" <${process.env.EMAIL_USER}>`,
                     to: process.env.RECIPIENT_EMAIL,
                     subject: `Reminder: Your ${med.name} stock is low!`,
@@ -85,7 +86,6 @@ const checkStockAndSendAlerts = async () => {
                         <a href="${snoozeLink}" style="background-color: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block;">
                             Snooze Alerts for 1 Hour
                         </a>
-                        <p style="font-size: 12px; color: #777;">(You'll get reminders again in an hour if you haven't restocked.)</p>
                     `
                 };
 
@@ -106,23 +106,13 @@ cron.schedule('* * * * *', checkStockAndSendAlerts, {
 console.log("Cron job scheduled: Daily stock check will run at 8:00 AM IST.");
 
 
-// --- 9. API ROUTES (UPDATED) ---
-
-// UPDATED SNOOZE ROUTE: Now snoozes for 1 hour
+// --- 9. API ROUTES ---
 app.get('/api/medicines/snooze/:id', async (req, res) => {
     try {
         const oneHourFromNow = new Date();
         oneHourFromNow.setHours(oneHourFromNow.getHours() + 1);
-
         await Medicine.findByIdAndUpdate(req.params.id, { snoozedUntil: oneHourFromNow });
-
-        res.send(`
-            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: #28a745;">Success!</h1>
-                <p>Reminders for this medicine have been snoozed for 1 hour.</p>
-                <p>You can now close this window.</p>
-            </div>
-        `);
+        res.send(`<div style="font-family: sans-serif; text-align: center; padding: 50px;"><h1 style="color: #28a745;">Success!</h1><p>Reminders for this medicine have been snoozed for 1 hour.</p><p>You can now close this window.</p></div>`);
     } catch (error) {
         res.status(500).send('An error occurred. Please try again.');
     }
@@ -131,32 +121,17 @@ app.get('/api/medicines/snooze/:id', async (req, res) => {
 app.post('/api/medicines/:id/restock', async (req, res) => {
     try {
         const { newQuantity } = req.body;
-        if (!newQuantity || newQuantity <= 0) {
-            return res.status(400).json({ message: 'Please provide a valid new quantity.' });
-        }
-        const updatedMedicine = await Medicine.findByIdAndUpdate(
-            req.params.id,
-            {
-                totalQuantity: newQuantity,
-                lastRestockedAt: new Date(),
-                snoozedUntil: null,
-            },
-            { new: true }
-        );
+        if (!newQuantity || newQuantity <= 0) { return res.status(400).json({ message: 'Please provide a valid new quantity.' }); }
+        const updatedMedicine = await Medicine.findByIdAndUpdate(req.params.id, { totalQuantity: newQuantity, lastRestockedAt: new Date(), snoozedUntil: null }, { new: true });
         if (!updatedMedicine) { return res.status(404).json({ message: 'Medicine not found' }); }
         res.json(updatedMedicine);
     } catch (error) { res.status(500).json({ message: "Server error while restocking." }); }
 });
 
-// --- Other routes (GET, POST, DELETE) remain the same ---
 app.get('/', (req, res) => { res.send('Hello from the Medicine Tracker API!'); });
 app.post('/api/medicines', async (req, res) => {
     try {
-        const newMedicine = new Medicine({
-            name: req.body.name,
-            totalQuantity: req.body.totalQuantity,
-            dosagePerDay: req.body.dosagePerDay,
-        });
+        const newMedicine = new Medicine({ name: req.body.name, totalQuantity: req.body.totalQuantity, dosagePerDay: req.body.dosagePerDay });
         const savedMedicine = await newMedicine.save();
         res.status(201).json(savedMedicine);
     } catch (error) { res.status(500).json({ message: "Server error while adding medicine." }); }
@@ -171,11 +146,7 @@ app.get('/api/medicines', async (req, res) => {
             const daysPassed = Math.floor(timeDiff / (1000 * 3600 * 24));
             const consumedQuantity = daysPassed * med.dosagePerDay;
             const currentStock = med.totalQuantity - consumedQuantity;
-            return {
-                ...med.toObject(),
-                currentStock: currentStock > 0 ? currentStock : 0,
-                daysLeft: currentStock > 0 ? Math.floor(currentStock / med.dosagePerDay) : 0,
-            };
+            return { ...med.toObject(), currentStock: currentStock > 0 ? currentStock : 0, daysLeft: currentStock > 0 ? Math.floor(currentStock / med.dosagePerDay) : 0 };
         });
         res.json(medicinesWithStock);
     } catch (error) { res.status(500).json({ message: "Server error while fetching medicines." }); }
@@ -190,6 +161,7 @@ app.delete('/api/medicines/:id', async (req, res) => {
 });
 
 // --- 10. START THE SERVER ---
-app.listen(PORT, () => {
+// DEPLOYMENT FIX: Listen on 0.0.0.0 to accept connections from outside the container.
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port: ${PORT}`);
 });
