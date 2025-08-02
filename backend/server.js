@@ -32,7 +32,6 @@ const medicineSchema = new mongoose.Schema({
     dosagePerDay: { type: Number, required: true, min: 1 },
     startDate: { type: Date, default: Date.now },
     lastRestockedAt: { type: Date, default: Date.now },
-    // NEW: This field will store the date until which notifications are paused.
     snoozedUntil: { type: Date, default: null } 
 });
 const Medicine = mongoose.model('Medicine', medicineSchema);
@@ -61,13 +60,11 @@ const checkStockAndSendAlerts = async () => {
             const currentStock = med.totalQuantity - consumedQuantity;
             const daysLeft = currentStock > 0 ? Math.floor(currentStock / med.dosagePerDay) : 0;
 
-            // NEW LOGIC: Check if stock is low AND if it is not currently snoozed.
             const isSnoozed = med.snoozedUntil && med.snoozedUntil > today;
 
-            if (daysLeft <= 3 && !isSnoozed) {
+            if (daysLeft <= 5 && !isSnoozed) {
                 console.log(`Stock for ${med.name} is low (${daysLeft} days left). Sending reminder...`);
                 
-                // This is the unique "magic link" for snoozing
                 const snoozeLink = `http://localhost:5000/api/medicines/snooze/${med._id}`;
 
                 const mailOptions = {
@@ -77,18 +74,18 @@ const checkStockAndSendAlerts = async () => {
                     html: `
                         <h1>Medicine Reminder</h1>
                         <p>Hi there,</p>
-                        <p>This is your daily reminder that your supply of <strong>${med.name}</strong> is running low.</p>
+                        <p>This is your reminder that your supply of <strong>${med.name}</strong> is running low.</p>
                         <ul>
                             <li>Current Stock: <strong>${currentStock} pills</strong></li>
                             <li>Days Left: <strong>Approximately ${daysLeft} days</strong></li>
                         </ul>
                         <p>Please remember to restock soon!</p>
                         <hr>
-                        <p>Once you've seen this, you can stop these reminders for one week by clicking the link below:</p>
+                        <p>Once you've seen this, you can stop these reminders for one hour by clicking the link below:</p>
                         <a href="${snoozeLink}" style="background-color: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                            Snooze Alerts for 7 Days
+                            Snooze Alerts for 1 Hour
                         </a>
-                        <p style="font-size: 12px; color: #777;">(You'll get reminders again in a week if you haven't restocked.)</p>
+                        <p style="font-size: 12px; color: #777;">(You'll get reminders again in an hour if you haven't restocked.)</p>
                     `
                 };
 
@@ -102,7 +99,7 @@ const checkStockAndSendAlerts = async () => {
 };
 
 // --- 8. SCHEDULED TASK (CRON JOB) ---
-cron.schedule('* * * * *', checkStockAndSendAlerts, {
+cron.schedule('0 8 * * *', checkStockAndSendAlerts, {
     scheduled: true,
     timezone: "Asia/Kolkata"
 });
@@ -111,18 +108,18 @@ console.log("Cron job scheduled: Daily stock check will run at 8:00 AM IST.");
 
 // --- 9. API ROUTES (UPDATED) ---
 
-// NEW SNOOZE ROUTE: This is where the magic link in the email leads.
+// UPDATED SNOOZE ROUTE: Now snoozes for 1 hour
 app.get('/api/medicines/snooze/:id', async (req, res) => {
     try {
-        const sevenDaysFromNow = new Date();
-        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+        const oneHourFromNow = new Date();
+        oneHourFromNow.setHours(oneHourFromNow.getHours() + 1);
 
-        await Medicine.findByIdAndUpdate(req.params.id, { snoozedUntil: sevenDaysFromNow });
+        await Medicine.findByIdAndUpdate(req.params.id, { snoozedUntil: oneHourFromNow });
 
         res.send(`
             <div style="font-family: sans-serif; text-align: center; padding: 50px;">
                 <h1 style="color: #28a745;">Success!</h1>
-                <p>Reminders for this medicine have been snoozed for 7 days.</p>
+                <p>Reminders for this medicine have been snoozed for 1 hour.</p>
                 <p>You can now close this window.</p>
             </div>
         `);
@@ -131,32 +128,24 @@ app.get('/api/medicines/snooze/:id', async (req, res) => {
     }
 });
 
-// UPDATED RESTOCK ROUTE: Now it also resets the snooze date.
 app.post('/api/medicines/:id/restock', async (req, res) => {
     try {
         const { newQuantity } = req.body;
         if (!newQuantity || newQuantity <= 0) {
             return res.status(400).json({ message: 'Please provide a valid new quantity.' });
         }
-
         const updatedMedicine = await Medicine.findByIdAndUpdate(
             req.params.id,
             {
                 totalQuantity: newQuantity,
                 lastRestockedAt: new Date(),
-                snoozedUntil: null, // Reset the snooze date so alerts can be sent again
+                snoozedUntil: null,
             },
             { new: true }
         );
-
-        if (!updatedMedicine) {
-            return res.status(404).json({ message: 'Medicine not found' });
-        }
+        if (!updatedMedicine) { return res.status(404).json({ message: 'Medicine not found' }); }
         res.json(updatedMedicine);
-    } catch (error) {
-        console.error("Error restocking medicine:", error);
-        res.status(500).json({ message: "Server error while restocking." });
-    }
+    } catch (error) { res.status(500).json({ message: "Server error while restocking." }); }
 });
 
 // --- Other routes (GET, POST, DELETE) remain the same ---
