@@ -102,7 +102,7 @@ const checkStockAndSendAlerts = async () => {
 // --- 8. SCHEDULED TASK (CRON JOB) ---
 // This will run the 'checkStockAndSendAlerts' function every day at 8:00 AM.
 // The format is: 'minute hour * * *'
-cron.schedule('0 8 * * *', checkStockAndSendAlerts, {
+cron.schedule('* * * * *', checkStockAndSendAlerts, {
     scheduled: true,
     timezone: "Asia/Kolkata"
 });
