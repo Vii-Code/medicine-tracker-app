@@ -69,7 +69,7 @@ const checkStockAndSendAlerts = async () => {
 
                 const mailOptions = {
                     from: `"Medicine Tracker" <${process.env.EMAIL_USER}>`,
-                    to: process.env.EMAIL_USER,
+                    to: process.env.RECIPIENT_EMAIL,
                     subject: `Reminder: Your ${med.name} stock is low!`,
                     html: `
                         <h1>Medicine Reminder</h1>
