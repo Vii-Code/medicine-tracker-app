@@ -8,18 +8,12 @@ const API_URL = 'http://localhost:5000/api/medicines';
 
 function App() {
   // --- STATE MANAGEMENT ---
-  // 'medicines' will hold the list of medicines fetched from the backend.
   const [medicines, setMedicines] = useState([]);
-  // 'formInput' will hold the data from the 'Add Medicine' form.
   const [formInput, setFormInput] = useState({ name: '', totalQuantity: '', dosagePerDay: '' });
-  // 'isLoading' will be true while we are fetching data.
   const [isLoading, setIsLoading] = useState(true);
-  // 'error' will hold any error messages.
   const [error, setError] = useState(null);
 
   // --- DATA FETCHING ---
-  // useEffect is a React hook that runs after the component renders.
-  // The empty array [] at the end means it will only run ONCE, when the component first loads.
   useEffect(() => {
     fetchMedicines();
   }, []);
@@ -43,67 +37,76 @@ function App() {
 
   // --- EVENT HANDLERS ---
   const handleInputChange = (e) => {
-    // Update the formInput state as the user types.
-    // e.target.name will be 'name', 'totalQuantity', or 'dosagePerDay'
-    // e.target.value will be what the user typed.
     setFormInput({ ...formInput, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Prevents the webpage from reloading on form submission.
-
-    // Basic validation
+    e.preventDefault(); 
     if (!formInput.name || !formInput.totalQuantity || !formInput.dosagePerDay) {
         alert('Please fill in all fields.');
         return;
     }
-
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             name: formInput.name,
             totalQuantity: Number(formInput.totalQuantity),
             dosagePerDay: Number(formInput.dosagePerDay)
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to add medicine.');
-      }
-
-      // Clear the form and fetch the updated list of medicines
+      if (!response.ok) { throw new Error('Failed to add medicine.'); }
       setFormInput({ name: '', totalQuantity: '', dosagePerDay: '' });
       fetchMedicines();
-
     } catch (err) {
         setError(err.message);
     }
   };
 
   const handleDelete = async (id) => {
-    // Ask for confirmation before deleting
     if (window.confirm('Are you sure you want to delete this medicine?')) {
         try {
-            const response = await fetch(`${API_URL}/${id}`, {
-                method: 'DELETE',
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to delete medicine.');
-            }
-            
-            // Refresh the list after deleting
+            const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+            if (!response.ok) { throw new Error('Failed to delete medicine.'); }
             fetchMedicines();
-
         } catch (err) {
             setError(err.message);
         }
     }
   };
+
+  // --- NEW RESTOCK HANDLER ---
+  const handleRestock = async (id) => {
+    const newQuantityStr = prompt("You've restocked! What is the new total quantity of this medicine?");
+    
+    if (newQuantityStr) { // If the user didn't click "Cancel"
+        const newQuantity = parseInt(newQuantityStr, 10);
+        if (!isNaN(newQuantity) && newQuantity > 0) {
+            try {
+                const response = await fetch(`${API_URL}/${id}/restock`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newQuantity }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to restock medicine.');
+                }
+                
+                // Refresh the list to show the updated stock and reset status
+                fetchMedicines();
+                alert('Medicine has been restocked!');
+
+            } catch (err) {
+                setError(err.message);
+            }
+        } else {
+            alert("Please enter a valid number greater than 0.");
+        }
+    }
+  };
+
 
   // --- RENDER LOGIC ---
   return (
@@ -154,12 +157,17 @@ function App() {
           <div className="medicines-list">
             {medicines.map((med) => (
               <div key={med._id} className="card medicine-card">
-                <h3>{med.name}</h3>
-                <p className={med.daysLeft <= 5 ? 'low-stock' : 'in-stock'}>
-                    Stock: {med.currentStock} pills
-                </p>
-                <p>({med.daysLeft} days left)</p>
-                <button className="delete-btn" onClick={() => handleDelete(med._id)}>Delete</button>
+                <div className="card-content">
+                    <h3>{med.name}</h3>
+                    <p className={med.daysLeft <= 5 ? 'low-stock' : 'in-stock'}>
+                        Stock: {med.currentStock} pills
+                    </p>
+                    <p>({med.daysLeft} days left)</p>
+                </div>
+                <div className="card-actions">
+                    <button className="restock-btn" onClick={() => handleRestock(med._id)}>Restock</button>
+                    <button className="delete-btn" onClick={() => handleDelete(med._id)}>Delete</button>
+                </div>
               </div>
             ))}
           </div>
